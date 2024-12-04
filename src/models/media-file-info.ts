@@ -9,5 +9,4 @@ export interface MediaFileInfo {
   jsonFileExists: boolean;
 
   outputFileName: string;
-  outputFilePath: string;
 }

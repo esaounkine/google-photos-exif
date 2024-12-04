@@ -1,15 +1,17 @@
-import { Command, flags } from '@oclif/command';
+import {Command, flags} from '@oclif/command';
 import * as Parser from '@oclif/parser';
-import { existsSync, promises as fspromises } from 'fs';
-import { CONFIG } from './config';
-import { doesFileHaveExifDate } from './helpers/does-file-have-exif-date';
-import { findSupportedMediaFiles } from './helpers/find-supported-media-files';
-import { readPhotoTakenTimeFromGoogleJson } from './helpers/read-photo-taken-time-from-google-json';
-import { updateExifMetadata } from './helpers/update-exif-metadata';
-import { updateFileModificationDate } from './helpers/update-file-modification-date';
-import { Directories } from './models/directories'
+import * as fs from 'fs';
+import {existsSync, promises as fspromises} from 'fs';
+import {CONFIG} from './config';
+import {doesFileHaveExifDate} from './helpers/does-file-have-exif-date';
+import {findSupportedMediaFiles} from './helpers/find-supported-media-files';
+import {readPhotoTakenTimeFromGoogleJson} from './helpers/read-photo-taken-time-from-google-json';
+import {updateExifMetadata} from './helpers/update-exif-metadata';
+import {updateFileModificationDate} from './helpers/update-file-modification-date';
+import {Directories} from './models/directories'
+import {resolve} from "path";
 
-const { readdir, mkdir, copyFile } = fspromises;
+const {readdir, mkdir, copyFile} = fspromises;
 
 class GooglePhotosExif extends Command {
   static description = `Takes in a directory path for an extracted Google Photos Takeout. Extracts all photo/video files (based on the conigured list of file extensions) and places them into an output directory. All files will have their modified timestamp set to match the timestamp specified in Google's JSON metadata files (where present). In addition, for file types that support EXIF, the EXIF "DateTimeOriginal" field will be set to the timestamp from Google's JSON metadata, if the field is not already set in the EXIF metadata.`;
@@ -34,11 +36,11 @@ class GooglePhotosExif extends Command {
     }),
   }
 
-  static args: Parser.args.Input  = []
+  static args: Parser.args.Input = []
 
   async run() {
-    const { args, flags} = this.parse(GooglePhotosExif);
-    const { inputDir, outputDir, errorDir } = flags;
+    const {args, flags} = this.parse(GooglePhotosExif);
+    const {inputDir, outputDir, errorDir} = flags;
 
     try {
       const directories = this.determineDirectoryPaths(inputDir, outputDir, errorDir);
@@ -115,25 +117,32 @@ class GooglePhotosExif extends Command {
     const fileNamesWithEditedExif: string[] = [];
 
     for (let i = 0, mediaFile; mediaFile = mediaFiles[i]; i++) {
+      // Process the output file, setting the modified timestamp and/or EXIF metadata where necessary
+      const photoTimeTaken = await readPhotoTakenTimeFromGoogleJson(mediaFile);
+
+      const [year, month] = photoTimeTaken?.split('-', 2) || ['0000', '00'];
+
+      const outputDirPath = resolve(directories.output, year, month);
+      fs.mkdirSync(outputDirPath, {
+        recursive: true,
+      });
+      const outputFilePath = resolve(outputDirPath, mediaFile.outputFileName);
 
       // Copy the file into output directory
       this.log(`Copying file ${i} of ${mediaFiles.length}: ${mediaFile.mediaFilePath} -> ${mediaFile.outputFileName}`);
-      await copyFile(mediaFile.mediaFilePath, mediaFile.outputFilePath);
-
-      // Process the output file, setting the modified timestamp and/or EXIF metadata where necessary
-      const photoTimeTaken = await readPhotoTakenTimeFromGoogleJson(mediaFile);
+      await copyFile(mediaFile.mediaFilePath, outputFilePath);
 
       if (photoTimeTaken) {
         if (mediaFile.supportsExif) {
           const hasExifDate = await doesFileHaveExifDate(mediaFile.mediaFilePath);
           if (!hasExifDate) {
-            await updateExifMetadata(mediaFile, photoTimeTaken, directories.error);
+            await updateExifMetadata(mediaFile, outputFilePath, photoTimeTaken, directories.error);
             fileNamesWithEditedExif.push(mediaFile.outputFileName);
             this.log(`Wrote "DateTimeOriginal" EXIF metadata to: ${mediaFile.outputFileName}`);
           }
         }
 
-        await updateFileModificationDate(mediaFile.outputFilePath, photoTimeTaken);
+        await updateFileModificationDate(outputFilePath, photoTimeTaken);
       }
     }
 

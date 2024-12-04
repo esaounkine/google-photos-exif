@@ -1,5 +1,5 @@
 import { existsSync } from 'fs';
-import { basename, extname, resolve } from 'path';
+import { basename, extname } from 'path';
 import { CONFIG } from '../config';
 import { MediaFileInfo } from '../models/media-file-info';
 import { doesFileSupportExif } from './does-file-support-exif';
@@ -24,7 +24,6 @@ export async function findSupportedMediaFiles(inputDir: string, outputDir: strin
     const jsonFileExists = jsonFilePath ? existsSync(jsonFilePath) : false;
 
     const outputFileName = generateUniqueOutputFileName(mediaFilePath, allUsedOutputFilesLowerCased);
-    const outputFilePath = resolve(outputDir, outputFileName);
 
     mediaFiles.push({
       mediaFilePath,
@@ -35,7 +34,6 @@ export async function findSupportedMediaFiles(inputDir: string, outputDir: strin
       jsonFileName,
       jsonFileExists,
       outputFileName,
-      outputFilePath,
     });
     allUsedOutputFilesLowerCased.push(outputFileName.toLowerCase());
   }
